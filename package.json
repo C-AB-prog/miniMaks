@@ -1,0 +1,16 @@
+{
+  "name": "business-assistant-v2",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": {"node": ">=20"},
+  "scripts": {
+    "dev": "npm run dev -w apps/api & npm run dev -w apps/web",
+    "dev:all": "npm run dev -w apps/api & npm run dev -w apps/web & npm run dev -w apps/worker",
+    "build": "npm run build -w apps/api && npm run build -w apps/web && npm run build -w apps/worker",
+    "start": "npm run start -w apps/api",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "prisma:migrate": "npm run prisma:migrate -w apps/api",
+    "prisma:studio": "npm run prisma:studio -w apps/api"
+  }
+}
