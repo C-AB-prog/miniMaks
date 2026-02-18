@@ -1,0 +1,291 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionStatus {
+  trial_active
+  trial_expired
+  paid
+}
+
+enum FocusStatus {
+  active
+  paused
+  archived
+}
+
+enum FocusRole {
+  owner
+  member
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  done
+  canceled
+}
+
+enum SubTaskStatus {
+  todo
+  done
+}
+
+enum AttachmentType {
+  link
+  file
+}
+
+enum NotificationStatus {
+  queued
+  sent
+  failed
+  skipped_quiet_hours
+}
+
+model User {
+  id          String        @id @default(uuid())
+  tg_id       BigInt        @unique
+  username    String?
+  first_name  String?
+  last_name   String?
+  created_at  DateTime      @default(now())
+  last_seen_at DateTime     @default(now())
+
+  subscription Subscription?
+  focuses_owned Focus[]      @relation("FocusOwner")
+  focus_members FocusMember[]
+  tasks_created Task[]       @relation("TaskCreator")
+  tasks_assigned Task[]      @relation("TaskAssignee")
+  comments      TaskComment[]
+  events        EventLog[]
+  notifications NotificationLog[]
+  reminder_settings ReminderSettings?
+}
+
+model Subscription {
+  user_id          String             @id
+  user             User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  trial_started_at DateTime
+  trial_expires_at DateTime
+  status           SubscriptionStatus
+  blocked_reason   String?
+}
+
+model Focus {
+  id             String       @id @default(uuid())
+  owner_user_id  String
+  owner          User         @relation("FocusOwner", fields: [owner_user_id], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  stage          String?
+  deadline_at    DateTime?
+  success_metric String?
+  budget         Float?
+  niche          String?
+  status         FocusStatus  @default(active)
+  created_at     DateTime     @default(now())
+  updated_at     DateTime     @updatedAt
+
+  members        FocusMember[]
+  invites        FocusInvite[]
+  tasks          Task[]
+  kpis           KPI[]
+  assistant_threads AssistantThread[]
+  events         EventLog[]
+
+  @@index([owner_user_id])
+}
+
+model FocusMember {
+  focus_id  String
+  user_id   String
+  role      FocusRole
+  joined_at DateTime @default(now())
+
+  focus Focus @relation(fields: [focus_id], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([focus_id, user_id])
+  @@index([user_id])
+}
+
+model FocusInvite {
+  id                String   @id @default(uuid())
+  focus_id          String
+  code              String   @unique
+  created_by_user_id String
+  expires_at        DateTime?
+  max_uses          Int?
+  uses_count        Int      @default(0)
+  created_at        DateTime @default(now())
+
+  focus Focus @relation(fields: [focus_id], references: [id], onDelete: Cascade)
+
+  @@index([focus_id])
+}
+
+model Task {
+  id                 String       @id @default(uuid())
+  focus_id           String
+  created_by_user_id String
+  assigned_to_user_id String?
+  title              String
+  description        String?
+  priority           TaskPriority @default(medium)
+  status             TaskStatus   @default(todo)
+  due_at             DateTime?
+  remind_policy      Json?
+  created_at         DateTime     @default(now())
+  updated_at         DateTime     @updatedAt
+  completed_at       DateTime?
+
+  focus      Focus @relation(fields: [focus_id], references: [id], onDelete: Cascade)
+  created_by User  @relation("TaskCreator", fields: [created_by_user_id], references: [id], onDelete: Cascade)
+  assigned_to User? @relation("TaskAssignee", fields: [assigned_to_user_id], references: [id], onDelete: SetNull)
+
+  subtasks   SubTask[]
+  comments   TaskComment[]
+  attachments TaskAttachment[]
+
+  @@index([focus_id])
+  @@index([assigned_to_user_id])
+  @@index([status])
+  @@index([due_at])
+}
+
+model SubTask {
+  id        String        @id @default(uuid())
+  task_id   String
+  title     String
+  status    SubTaskStatus @default(todo)
+  created_at DateTime     @default(now())
+
+  task Task @relation(fields: [task_id], references: [id], onDelete: Cascade)
+
+  @@index([task_id])
+}
+
+model TaskComment {
+  id             String   @id @default(uuid())
+  task_id        String
+  author_user_id String
+  text           String
+  created_at     DateTime @default(now())
+
+  task   Task @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  author User @relation(fields: [author_user_id], references: [id], onDelete: Cascade)
+
+  @@index([task_id])
+  @@index([author_user_id])
+}
+
+model TaskAttachment {
+  id        String         @id @default(uuid())
+  task_id   String
+  type      AttachmentType
+  url       String?
+  tg_file_id String?
+  file_name String?
+  mime      String?
+  size      Int?
+  created_at DateTime      @default(now())
+
+  task Task @relation(fields: [task_id], references: [id], onDelete: Cascade)
+
+  @@index([task_id])
+}
+
+model KPI {
+  id            String   @id @default(uuid())
+  focus_id      String
+  name          String
+  unit          String?
+  target_value  Float?
+  current_value Float?
+  updated_at    DateTime @updatedAt
+
+  focus Focus @relation(fields: [focus_id], references: [id], onDelete: Cascade)
+
+  @@index([focus_id])
+}
+
+model AssistantThread {
+  id        String   @id @default(uuid())
+  focus_id  String
+  created_at DateTime @default(now())
+
+  focus Focus @relation(fields: [focus_id], references: [id], onDelete: Cascade)
+  messages AssistantMessage[]
+
+  @@index([focus_id])
+}
+
+model AssistantMessage {
+  id         String   @id @default(uuid())
+  thread_id  String
+  role       String
+  content    String
+  created_at DateTime @default(now())
+  meta       Json?
+
+  thread AssistantThread @relation(fields: [thread_id], references: [id], onDelete: Cascade)
+
+  @@index([thread_id])
+}
+
+model ReminderSettings {
+  user_id   String @id
+  user      User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  timezone  String @default("Europe/Helsinki")
+  quiet_hours Json?
+  no_due_nudge Json?
+  default_due_offsets Json?
+  enabled_types Json?
+  updated_at DateTime @updatedAt
+}
+
+model NotificationLog {
+  id        String            @id @default(uuid())
+  user_id   String
+  type      String
+  payload   Json
+  status    NotificationStatus
+  error     String?
+  created_at DateTime @default(now())
+  sent_at    DateTime?
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([created_at])
+}
+
+model EventLog {
+  id        String   @id @default(uuid())
+  ts        DateTime @default(now())
+  user_id   String?
+  focus_id  String?
+  event_name String
+  props     Json?
+
+  user  User?  @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  focus Focus? @relation(fields: [focus_id], references: [id], onDelete: SetNull)
+
+  @@index([ts])
+  @@index([event_name, ts])
+  @@index([user_id, ts])
+  @@index([focus_id, ts])
+}
